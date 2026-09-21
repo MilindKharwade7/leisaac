@@ -38,7 +38,7 @@ def write_gripper_effort_limit_sim(env, env_arm):
 
     target_masses = object_masses[min_indices.cpu(), 0, 0]  # [num_envs]
 
-    target_effort_limits = (target_masses / 0.15).to(env_arm._data.joint_effort_limits.device)
+    target_effort_limits = target_masses / 0.15  # already a torch tensor on the env device (3.0: joint_effort_limits is warp-backed)
 
     current_effort_limit_sim = env_arm._data.joint_effort_limits[:, -1]  # [num_envs]
     need_update = torch.abs(target_effort_limits - current_effort_limit_sim) > 0.1
@@ -47,7 +47,9 @@ def write_gripper_effort_limit_sim(env, env_arm):
         new_limits = current_effort_limit_sim.clone()
         new_limits[need_update] = target_effort_limits[need_update]
 
-        env_arm.write_joint_effort_limit_to_sim(limits=new_limits, joint_ids=[5 for _ in range(num_envs)])
+        env_arm.write_joint_effort_limit_to_sim(
+            limits=new_limits.reshape(num_envs, 1), joint_ids=[5 for _ in range(num_envs)]
+        )  # IsaacLab 3.0: limits must be (num_envs, num_joints)
 
 
 def get_task_type(task: str, task_type: str | None = None) -> str:

@@ -3,6 +3,13 @@ from typing import Any
 
 import isaaclab.envs.mdp as mdp
 import torch
+
+try:
+    _DiffIKCfg = mdp.DifferentialIKControllerCfg  # IsaacLab <=2.x re-export
+except AttributeError:
+    from isaaclab.controllers import DifferentialIKControllerCfg as _DiffIKCfg  # IsaacLab 3.0
+mdp.DifferentialIKControllerCfg = _DiffIKCfg  # keep mdp.* references working
+
 from leisaac.assets.robots.lerobot import SO101_FOLLOWER_USD_JOINT_LIMLITS
 
 

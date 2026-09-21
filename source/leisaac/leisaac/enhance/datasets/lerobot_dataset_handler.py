@@ -1,6 +1,11 @@
 import copy
 
-from isaaclab.utils import configclass
+from isaaclab.utils import configclass as _configclass_attr
+
+if not callable(_configclass_attr):  # IsaacLab 3.0: re-export removed, submodule shadows it
+    from isaaclab.utils.configclass import configclass
+else:
+    configclass = _configclass_attr
 from isaaclab.utils.datasets.dataset_file_handler_base import DatasetFileHandlerBase
 from isaaclab.utils.datasets.episode_data import EpisodeData
 

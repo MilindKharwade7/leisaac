@@ -103,7 +103,42 @@ def get_all_joints_without_fixed(articulation_prim):
     return [joint for joint in joints if not is_fixed_joint(joint)]
 
 
-import isaacsim.core.utils.prims as prim_utils
+try:
+    import isaacsim.core.utils.prims as prim_utils
+except (ImportError, ModuleNotFoundError):
+    # Isaac Sim 6.0 moved isaacsim.core.* into the deprecated extensions. The
+    # top-level isaacsim package is a regular package, so we extend its
+    # __path__ to merge every isaacsim.core.* ext's package tree into it.
+    import glob as _glob
+    import os as _os
+
+    import isaacsim as _isaacsim
+
+    _sim_root = _os.environ.get("ISAAC_PATH", "/workspace/isaaclab/_isaac_sim")
+    for _ext_dir in sorted(
+        _glob.glob(_os.path.join(_sim_root, "extsDeprecated", "isaacsim.core.*"))
+        + _glob.glob(_os.path.join(_sim_root, "exts", "isaacsim.core.*"))
+    ):
+        _pkg_root = _os.path.join(_ext_dir, "isaacsim")
+        if _os.path.isdir(_pkg_root) and _pkg_root not in _isaacsim.__path__:
+            _isaacsim.__path__.append(_pkg_root)
+    # The deprecated isaacsim.core.utils.semantics module does a bare
+    # `import Semantics`, a Kit python module removed in Isaac Sim 6.0.
+    # It only references Semantics.SemanticsAPI / Semantics.LabelsAPI, which
+    # map onto the modern pxr.UsdSemantics.LabelsAPI schema, so provide them.
+    try:
+        import Semantics  # noqa: F401
+    except ModuleNotFoundError:
+        import sys as _sys
+        import types as _types
+
+        from pxr import UsdSemantics as _UsdSemantics
+
+        _semantics_stub = _types.ModuleType("Semantics")
+        _semantics_stub.SemanticsAPI = _UsdSemantics.LabelsAPI
+        _semantics_stub.LabelsAPI = _UsdSemantics.LabelsAPI
+        _sys.modules["Semantics"] = _semantics_stub
+    import isaacsim.core.utils.prims as prim_utils  # noqa: E402
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.assets.rigid_object import RigidObjectCfg
 from isaaclab.sim.spawners.spawner_cfg import RigidObjectSpawnerCfg

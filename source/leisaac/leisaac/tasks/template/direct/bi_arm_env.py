@@ -73,8 +73,9 @@ class BiArmTaskDirectEnvCfg(DirectRLEnvCfg):
         self.viewer.eye = (2.5, -1.0, 1.3)
         self.viewer.lookat = (3.6, -0.4, 1.0)
 
-        self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.friction_correlation_distance = 0.00625
+        if hasattr(self.sim, 'physx'):  # IsaacLab <=2.x; 3.0 moved PhysxCfg out of SimulationCfg
+            self.sim.physx.bounce_threshold_velocity = 0.01
+            self.sim.physx.friction_correlation_distance = 0.00625
         self.sim.render.enable_translucency = True
 
         self.scene.left_arm.init_state.pos = (3.4, -0.65, 0.89)

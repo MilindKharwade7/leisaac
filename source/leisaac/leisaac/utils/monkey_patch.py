@@ -41,6 +41,9 @@ def patch_termination_manager():
 
 def monkey_patch():
     patch_termination_manager()
+    # IsaacLab 3.0 compat: convert warp ProxyArray data buffers to torch tensors
+    # before they reach isaaclab.utils.math helpers (quat_inv etc.)
+    from leisaac.utils import isaaclab3_compat  # noqa: F401  (installing on import)
 
 
 monkey_patch()

@@ -199,8 +199,9 @@ class LeKiwiTaskEnvCfg(ManagerBasedRLEnvCfg):
         self.viewer.eye = (1.4, -0.9, 1.2)
         self.viewer.lookat = (2.0, -0.5, 1.0)
 
-        self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.friction_correlation_distance = 0.00625
+        if hasattr(self.sim, 'physx'):  # IsaacLab <=2.x; 3.0 moved PhysxCfg out of SimulationCfg
+            self.sim.physx.bounce_threshold_velocity = 0.01
+            self.sim.physx.friction_correlation_distance = 0.00625
         self.sim.render.enable_translucency = True
 
         self.scene.ee_frame.visualizer_cfg.markers["frame"].scale = (0.05, 0.05, 0.05)
