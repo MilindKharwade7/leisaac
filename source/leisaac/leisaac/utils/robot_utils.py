@@ -82,6 +82,12 @@ def is_so101_at_rest_pose(joint_pos: torch.Tensor, joint_names: list[str]) -> to
     """
     Check if the robot is in the rest pose.
     """
+    # IsaacLab 3.0 exposes asset data as warp-backed ProxyArray objects. Their
+    # ``device`` is a warp Device (not a torch.device), which torch.ones() rejects
+    # ("invalid combination of arguments - got (int, device=Device, ...)"), so use
+    # the zero-copy torch view first.
+    if not isinstance(joint_pos, torch.Tensor):
+        joint_pos = joint_pos.torch
     is_reset = torch.ones(joint_pos.shape[0], dtype=torch.bool, device=joint_pos.device)
     reset_pose_range = SO101_FOLLOWER_REST_POSE_RANGE
     joint_pos = joint_pos / torch.pi * 180.0  # change to degree
