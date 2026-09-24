@@ -6,6 +6,20 @@ Please install the following specific versions of the dependencies:
 pip install lerobot==0.3.3
 pip install numpy==1.26.0
 
+If a newer LeRobot (>= 0.4) is installed, use ``scripts/convert/isaaclab2lerobotv3.py`` instead, which
+writes the LeRobot Dataset v3 format supported by those versions.
+
+Visualization flags (simulation window / stream):
+
+    # show the Isaac Sim window on the local display (e.g. a DCV/X11 desktop)
+    python scripts/convert/isaaclab2lerobot.py ... --viz kit
+
+    # keep the host headless and stream over WebRTC to a browser client
+    python scripts/convert/isaaclab2lerobot.py ... --livestream 1
+
+Without ``--viz kit``/``--livestream`` the script runs headless, which is the recommended mode for a
+plain conversion run since no viewport is needed.
+
 """
 
 import argparse
@@ -14,6 +28,38 @@ import os
 from isaaclab.app import AppLauncher
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from tqdm import tqdm
+
+
+def _lerobot_major_minor(version: str) -> tuple[int, int]:
+    """Parse the major/minor components of a version string (tolerates suffixes like '0.4.2rc1')."""
+    components = []
+    for chunk in str(version).split(".")[:2]:
+        digits = "".join(char for char in chunk if char.isdigit())
+        components.append(int(digits) if digits else 0)
+    while len(components) < 2:
+        components.append(0)
+    return components[0], components[1]
+
+
+try:
+    from lerobot import __version__ as _lerobot_version
+except ImportError:  # pragma: no cover - very old lerobot builds do not expose __version__
+    _lerobot_version = "0.3.0"
+
+if _lerobot_major_minor(_lerobot_version) >= (0, 4):
+    raise SystemExit(
+        f"ERROR: isaaclab2lerobot.py writes the LeRobot Dataset v2 format and requires lerobot==0.3.3,\n"
+        f"       but lerobot {_lerobot_version} is installed. The v2 dataset API changed in lerobot 0.4\n"
+        f"       (LeRobotDataset.add_frame() no longer accepts a 'task' argument).\n"
+        f"\n"
+        f"Use the v3 converter instead (same arguments, plus --viz kit to show the simulation):\n"
+        f"  python scripts/convert/isaaclab2lerobotv3.py --task_name=<task> --repo_id=<repo_id> \\\n"
+        f"      --hdf5_root=<dir> --hdf5_files=<file> --viz kit\n"
+        f"\n"
+        f"Or install the v2-compatible dependency versions:\n"
+        f"  pip install lerobot==0.3.3\n"
+        f"  pip install numpy==1.26.0\n"
+    )
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Convert IsaacLab dataset to LeRobot Dataset v2.")
@@ -67,13 +113,24 @@ parser.add_argument(
 AppLauncher.add_app_launcher_args(parser)
 # parse the arguments
 args_cli = parser.parse_args()
-# default arguments
-default_args = {
-    "headless": True,
-    "enable_cameras": True,
-}
 app_launcher_args = vars(args_cli)
-app_launcher_args.update(default_args)
+
+# The environments own camera sensors, so rendering stays enabled in every mode.
+app_launcher_args["enable_cameras"] = True
+
+# A conversion run does not need a viewport, so default to headless. Visualizing is opt-in through the
+# AppLauncher flags, e.g. to watch the simulation on a DCV/X11 desktop:
+#   --viz kit              -> open the Isaac Sim window on $DISPLAY
+#   --livestream 1 (or 2)  -> keep the host headless and stream over WebRTC
+#   --headless             -> [deprecated in IsaacLab 3.x] force headless mode
+wants_visualizer = bool(app_launcher_args.get("visualizer")) or (app_launcher_args.get("livestream") or 0) > 0
+if not wants_visualizer:
+    app_launcher_args["headless"] = True
+elif not app_launcher_args.get("livestream") and not os.environ.get("DISPLAY"):
+    print(
+        "[WARN] '--viz kit' needs an X11 display, but DISPLAY is not set. Run the script inside the DCV"
+        " session (where DISPLAY/XAUTHORITY are exported) or use '--livestream 1' instead."
+    )
 
 # launch omniverse app
 app_launcher = AppLauncher(app_launcher_args)
@@ -132,6 +189,38 @@ def add_episode(
     return True
 
 
+def validate_episode_shapes(episode: EpisodeData, dataset_cfg: LeRobotDatasetCfg, task_type: str) -> None:
+    """Fail fast (with an actionable message) when the episode does not match the built environment.
+
+    The environment action/observation dimensions depend on the device selected through ``--task_type``
+    (e.g. 6 joint values for the leader arm, 8 for the IK-based state machine). A mismatching dataset is
+    otherwise only reported by LeRobot as a cryptic 'unexpected shape' error.
+    """
+    data = episode.data
+    if "actions" not in data:
+        return
+
+    expected_action = tuple(dataset_cfg.features["action"]["shape"])
+    actual_action = tuple(data["actions"].shape[1:])
+    if actual_action != expected_action:
+        raise ValueError(
+            f"The recorded episode contains {actual_action}-dimensional actions, but the environment built for"
+            f" task_type='{task_type}' expects {expected_action}.\n"
+            "Please pass --task_type with the device that was used to record the dataset, e.g."
+            " 'so101_state_machine' for data generated by scripts/datagen/state_machine/generate.py, or"
+            " 'keyboard'/'gamepad' for those devices."
+        )
+
+    if "obs" in data and "joint_pos" in data["obs"]:
+        expected_state = tuple(dataset_cfg.features["observation.state"]["shape"])
+        actual_state = tuple(data["obs"]["joint_pos"].shape[1:])
+        if actual_state != expected_state:
+            raise ValueError(
+                f"The recorded episode contains {actual_state}-dimensional joint states, but the environment"
+                f" built for task_type='{task_type}' expects {expected_state}."
+            )
+
+
 def convert_isaaclab_to_lerobot():
     """automatically build features and dataset"""
     env_cfg = parse_env_cfg(args_cli.task_name, device=args_cli.device, num_envs=1)
@@ -147,12 +236,20 @@ def convert_isaaclab_to_lerobot():
     )
     dataset_cfg.features = build_feature_from_env(env, dataset_cfg)
 
-    dataset = LeRobotDataset.create(
-        repo_id=dataset_cfg.repo_id,
-        fps=dataset_cfg.fps,
-        robot_type=dataset_cfg.robot_type,
-        features=dataset_cfg.features,
-    )
+    try:
+        dataset = LeRobotDataset.create(
+            repo_id=dataset_cfg.repo_id,
+            fps=dataset_cfg.fps,
+            robot_type=dataset_cfg.robot_type,
+            features=dataset_cfg.features,
+        )
+    except FileExistsError as error:
+        raise SystemExit(
+            f"{error}\n"
+            f"The LeRobot dataset root for '{dataset_cfg.repo_id}' already exists in the LeRobot cache"
+            " (HF_LEROBOT_HOME, by default ~/.cache/huggingface/lerobot) and LeRobot does not overwrite it.\n"
+            "Delete that directory (or point HF_LEROBOT_HOME somewhere else) and run the conversion again."
+        ) from error
 
     if args_cli.hdf5_files is None:
         hdf5_files_list = [os.path.join(args_cli.hdf5_root, "dataset.hdf5")]
@@ -176,6 +273,7 @@ def convert_isaaclab_to_lerobot():
             if not episode.success:
                 print(f"Episode {episode_name} is not successful, skip it")
                 continue
+            validate_episode_shapes(episode, dataset_cfg, task_type)
             valid = add_episode(dataset, episode, env, dataset_cfg, args_cli.task_description)
             if valid:
                 now_episode_index += 1

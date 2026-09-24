@@ -21,12 +21,44 @@ python scripts/convert/isaaclab2lerobot.py \
     --hdf5_files=dataset.hdf5
 ```
 
+:::tip
+`isaaclab2lerobot.py` writes the **v2** format and therefore requires `lerobot==0.3.3`. If a newer LeRobot
+is installed (for example `lerobot==0.4.2`), it exits immediately with instructions: use
+`isaaclab2lerobotv3.py` instead, which writes the **v3** format and accepts the exact same arguments.
+:::
+
+:::info Seeing the simulation on screen
+The conversion itself does not need a viewport, so both scripts run **headless by default**. To watch the
+simulation while converting (e.g. on a DCV/X11 desktop), pass IsaacLab's visualizer flag:
+
+```bash
+python scripts/convert/isaaclab2lerobot.py \
+    --task_name=LeIsaac-SO101-PickOrange-v0 \
+    --repo_id=EverNorif/so101_test_orange_pick \
+    --hdf5_root=./datasets \
+    --hdf5_files=dataset.hdf5 \
+    --viz kit
+```
+
+Run the command from the DCV session, so that `DISPLAY`/`XAUTHORITY` are already exported. From a plain SSH
+shell you have to provide them yourself, for example:
+
+```bash
+DISPLAY=:0 XAUTHORITY=/root/.cache/dcv/dcv/<session>.xauth python scripts/convert/isaaclab2lerobot.py ... --viz kit
+```
+
+Alternatively, keep the host headless and stream the viewport to a browser client with `--livestream 1`
+(or `2` for a private network). Note that the viewport only shows the freshly built scene: the frames are
+read from the HDF5 file, so no motion is displayed during the conversion. Use
+`scripts/environments/teleoperation/replay.py` (also accepts `--viz kit`) to watch a recorded dataset.
+:::
+
 <details>
 <summary><strong>Parameter descriptions for isaaclab2lerobot.py</strong></summary><p></p>
 
 - `--task_name`: Name of the task, e.g., `LeIsaac-SO101-PickOrange-v0`.
 
-- `--task_type`: Specify task type. If your dataset is recorded with keyboard/gamepad, you should set it to 'keyboard'/'gamepad', otherwise not to set it and keep default value None.
+- `--task_type`: Specify task type. If your dataset is recorded with keyboard/gamepad, you should set it to 'keyboard'/'gamepad', otherwise not to set it and keep default value None. Datasets produced by `scripts/datagen/state_machine/generate.py` must be converted with `--task_type=so101_state_machine`, because those episodes store 8-dimensional end-effector actions instead of the 6 joint values used by the leader arm. The scripts check this before converting and report the mismatching dimensions.
 
 - `--repo_id`: Specify the LeRobot Dataset repo-id, e.g., `EverNorif/so101_test_orange_pick`
 

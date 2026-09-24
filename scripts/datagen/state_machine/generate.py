@@ -111,8 +111,14 @@ def _configure_env_cfg(env_cfg, args_cli, is_direct_env, output_dir, output_file
     else:
         if hasattr(env_cfg.terminations, "time_out"):
             env_cfg.terminations.time_out = None
-        if hasattr(env_cfg.terminations, "success"):
-            env_cfg.terminations.success = None
+        # Keep a "success" termination term available so that auto_terminate() can toggle episode
+        # termination at runtime, even when not recording. The state machine decides when an episode
+        # ends, so the term is initialized to a constant-false function.
+        if not hasattr(env_cfg.terminations, "success"):
+            setattr(env_cfg.terminations, "success", None)
+        env_cfg.terminations.success = TerminationTermCfg(
+            func=lambda env: torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        )
 
     if args_cli.record:
         if args_cli.use_lerobot_recorder:
@@ -135,12 +141,6 @@ def _configure_env_cfg(env_cfg, args_cli, is_direct_env, output_dir, output_file
         env_cfg.recorders.dataset_filename = output_file_name
         if is_direct_env:
             env_cfg.return_success_status = False
-        else:
-            if not hasattr(env_cfg.terminations, "success"):
-                setattr(env_cfg.terminations, "success", None)
-            env_cfg.terminations.success = TerminationTermCfg(
-                func=lambda env: torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-            )
     else:
         env_cfg.recorders = None
 
